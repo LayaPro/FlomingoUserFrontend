@@ -9,6 +9,7 @@ interface ImageData {
   width: number;
   height: number;
   loaded: boolean;
+  position?: { top: number; left: number; width: number };
 }
 
 interface FolderData {
@@ -19,12 +20,13 @@ interface FolderData {
 function App() {
   const [images, setImages] = useState<ImageData[]>([]);
   const [displayedImages, setDisplayedImages] = useState<ImageData[]>([]);
+  const [columns, setColumns] = useState<ImageData[][]>([[], [], [], [], []]); // 5 separate columns
   const [loading, setLoading] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [currentBatch, setCurrentBatch] = useState(0);
   const [selectedImage, setSelectedImage] = useState<ImageData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const imagesPerBatch = 20;
+  const imagesPerBatch = 5; // Load 5 images at a time
   const [bannerUrl, setBannerUrl] = useState<string>("");
   const [folders, setFolders] = useState<FolderData[]>([]);
   const [activeFolder, setActiveFolder] = useState<string>("");
@@ -90,6 +92,7 @@ function App() {
           setLoading(true);
           setImages([]);
           setDisplayedImages([]);
+          setColumns([[], [], [], [], []]);
           setCurrentBatch(0);
 
           const path = window.location.search.substring(1);
@@ -109,8 +112,8 @@ function App() {
               (url: string, index: number) => ({
                 id: `${index}`,
                 url: url,
-                width: 800,
-                height: 600,
+                width: 0, // Will be set when image loads
+                height: 0, // Will be set when image loads
                 loaded: false,
               })
             );
@@ -181,7 +184,12 @@ function App() {
         const image = new Image();
         image.onload = () => {
           console.log(`✅ Image loaded successfully: ${img.url}`);
-          resolve({ ...img, loaded: true });
+          resolve({
+            ...img,
+            loaded: true,
+            width: image.naturalWidth,
+            height: image.naturalHeight,
+          });
         };
         image.onerror = () => {
           console.log(`❌ Image failed to load: ${img.url}`);
@@ -189,11 +197,16 @@ function App() {
           const retryImage = new Image();
           retryImage.onload = () => {
             console.log(`✅ Image loaded on retry: ${img.url}`);
-            resolve({ ...img, loaded: true });
+            resolve({
+              ...img,
+              loaded: true,
+              width: retryImage.naturalWidth,
+              height: retryImage.naturalHeight,
+            });
           };
           retryImage.onerror = () => {
             console.log(`❌ Image failed on retry: ${img.url}`);
-            resolve({ ...img, loaded: false }); // Mark as failed
+            resolve({ ...img, loaded: false, width: 800, height: 600 }); // Fallback dimensions
           };
           retryImage.src = img.url;
         };
@@ -201,22 +214,94 @@ function App() {
       });
     });
 
-    // Wait for ALL images in the batch to load perfectly
+    // Wait for ALL images in the batch to load
     const loadedImages = await Promise.all(imagePromises);
 
-    // Add the batch even if some images failed to load
-    const successfulImages = loadedImages.filter((img) => img.loaded);
     console.log(
-      `Batch ${currentBatch + 1}: ${successfulImages.length}/${
-        loadedImages.length
-      } images loaded successfully`
+      `Batch ${currentBatch + 1}: ${loadedImages.length} images loaded`
     );
 
-    if (successfulImages.length > 0) {
-      setDisplayedImages((prev) => [...prev, ...successfulImages]);
+    // Add all images from batch, fill columns to target height
+    if (loadedImages.length > 0) {
+      // Save current scroll position
+      const scrollY = window.scrollY;
+
+      // Prevent scroll events during update
+      const preventScroll = (e: Event) => {
+        e.preventDefault();
+        window.scrollTo(0, scrollY);
+      };
+
+      window.addEventListener("scroll", preventScroll, { passive: false });
+
+      setColumns((prevCols) => {
+        const newCols = prevCols.map((col) => [...col]);
+
+        // Calculate heights including gaps between images (0.3em gap = ~5px approx)
+        const GAP_HEIGHT = 5; // pixels
+        const columnHeights = newCols.map((col) => {
+          const imageHeights = col.reduce((sum, img) => {
+            if (img.width && img.height && img.width > 0) {
+              return sum + img.height / img.width;
+            }
+            return sum + 1;
+          }, 0);
+          // Add gap height for each image in the column
+          const gapHeight = col.length * GAP_HEIGHT;
+          return imageHeights + gapHeight / 100; // Normalize gaps to aspect ratio scale
+        });
+
+        // Add each image - ALWAYS to the shortest column
+        loadedImages.forEach((newImage, idx) => {
+          // Find the shortest column
+          const shortestCol = columnHeights.indexOf(Math.min(...columnHeights));
+
+          // Calculate the image height
+          const newImageHeight =
+            newImage.width && newImage.height && newImage.width > 0
+              ? newImage.height / newImage.width
+              : 1;
+
+          // Log details
+          const colDetails = columnHeights
+            .map((h, i) => {
+              const imgCount = newCols[i].length;
+              return `Col${i}(${imgCount}img,${h.toFixed(1)})`;
+            })
+            .join(" | ");
+
+          console.log(
+            `Image ${
+              currentBatch * imagesPerBatch + idx
+            }: ${colDetails} => Adding to Col${shortestCol}`
+          );
+
+          newCols[shortestCol].push(newImage);
+          columnHeights[shortestCol] += newImageHeight + GAP_HEIGHT / 100;
+        });
+
+        return newCols;
+      });
+
+      setDisplayedImages((prev) => [...prev, ...loadedImages]);
       setCurrentBatch((prev) => prev + 1);
+
+      // Lock scroll position and remove event listener
+      setTimeout(() => {
+        window.scrollTo(0, scrollY);
+        window.removeEventListener("scroll", preventScroll);
+
+        // Final position lock after all rendering is complete
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY);
+          });
+        });
+      }, 0);
     }
 
+    // Wait 2 seconds before allowing next batch to load
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     setBatchLoading(false);
   }, [images, currentBatch, batchLoading]);
 
@@ -416,43 +501,50 @@ function App() {
       {loading && (
         <div className="loading-indicator">
           <div className="loading-spinner"></div>
-          <p>Loading images from S3...</p>
         </div>
       )}
 
       <div className="masonry-container">
-        {displayedImages.map((img) => (
-          <div key={img.id} className="image-container">
-            <img
-              src={img.url}
-              alt={`S3 Image ${img.id}`}
-              className={`masonry-img ${img.loaded ? "loaded" : ""}`}
-              loading="lazy"
-              onClick={() => openModal(img)}
-            />
-            <div className="image-overlay">
-              <button
-                className="download-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDownload(img.url, img.id);
-                }}
-                title="Download image"
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7,10 12,15 17,10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </button>
-            </div>
+        {columns.map((column, colIndex) => (
+          <div
+            key={colIndex}
+            className="masonry-column"
+            id={`column-${colIndex}`}
+          >
+            {column.map((img) => (
+              <div key={img.id} className="image-container">
+                <img
+                  src={img.url}
+                  alt={`S3 Image ${img.id}`}
+                  className={`masonry-img ${img.loaded ? "loaded" : ""}`}
+                  loading="lazy"
+                  onClick={() => openModal(img)}
+                />
+                <div className="image-overlay">
+                  <button
+                    className="download-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(img.url, img.id);
+                    }}
+                    title="Download image"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7,10 12,15 17,10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -460,7 +552,6 @@ function App() {
       {batchLoading && (
         <div className="loading-indicator">
           <div className="loading-spinner"></div>
-          <p>Loading images...</p>
         </div>
       )}
 
