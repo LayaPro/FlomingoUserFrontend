@@ -113,13 +113,23 @@ html {
 
 /* Mobile-specific styles */
 @media (max-width: 768px) {
-  .banner {
-    height: 50vh; /* Shorter height only on mobile */
-    min-height: 400px; /* Minimum height on mobile */
+  /* .banner {
+    height: 50vh; 
+    min-height: 400px; 
   }
 
   .banner-image {
-    object-position: center 25%; /* Adjust focus point for mobile */
+    object-position: center 25%; 
+  }
+} */
+  .banner {
+    height: auto;
+  }
+
+  .banner-image {
+    height: auto;
+    object-fit: contain;
+    object-position: center;
   }
 }
 
@@ -634,7 +644,7 @@ html {
     padding: 1em 0.5em;
   }
   .banner {
-    height: 100vh;
+    height: auto;
   }
   .banner-overlay h1 {
     font-size: 2rem;

@@ -144,7 +144,6 @@ function App() {
         const path = window.location.search.substring(1); // remove the '?'
         const [bucketName = config.defaultBucket] = path.split("/");
         const decodedBucketName = decodeURIComponent(bucketName);
-        const bannerPrefix = `${bucketName}/cover/`; // Add cover folder for banner image
 
         // Call your Express server endpoint for banner
         const response = await axios.post(`${config.apiBaseUrl}/get-cover`, {
@@ -347,9 +346,6 @@ function App() {
               // }}
               // onLoad={() => console.log("Banner image loaded successfully")}
             />
-            <div className="banner-overlay">
-              {/* Text removed - keeping overlay for potential future use */}
-            </div>
           </>
         ) : (
           <div>Loading banner...</div>
@@ -375,7 +371,7 @@ function App() {
         </div>
         <button
           className="download-album-btn"
-          title="Download Album"
+          // title="Download Album"
           onClick={async () => {
             try {
               const path = window.location.search.substring(1);
@@ -413,7 +409,7 @@ function App() {
             <polyline points="7,10 12,15 17,10" />
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
-          <span>Download Album</span>
+          {/* <span>Download Album</span> */}
         </button>
       </div>
 
